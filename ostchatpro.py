@@ -55,13 +55,16 @@ if "selected_contact" not in st.session_state: st.session_state.selected_contact
 if "is_group_chat" not in st.session_state: st.session_state.is_group_chat = False
 if "active_call" not in st.session_state: st.session_state.active_call = None
 
-# --- GİRİŞ EKRANI ---
+# --- GİRİŞ EKRANI (ÖRNEKSİZ) ---
 if not st.session_state.logged_in:
     st.markdown("<div class='login-container'>", unsafe_allow_html=True)
     st.title("💬 östchat PRO")
-    st.write("Hoş geldin! Dünyanın öbür ucuna bağlanmaya hazırsın.")
+    st.write("Lütfen giriş bilgilerini gir.")
+    
+    # Placeholder'lar kaldırıldı
     phone_input = st.text_input("Telefon Numaran:")
     name_input = st.text_input("Adın:")
+    
     if st.button("Giriş Yap", type="primary"):
         if phone_input and name_input:
             data = load_data()
