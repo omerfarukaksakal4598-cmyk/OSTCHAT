@@ -18,92 +18,29 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# --- GELİŞMİŞ CSS (WHATSAPP LOOK & FEEL) ---
+# --- GELİŞMİŞ CSS ---
 st.markdown("""
 <style>
-    /* WhatsApp Web Arka Planı */
-    .stApp {
-        background-color: #efeae2;
-        background-image: url("https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png");
-        background-repeat: repeat;
-        background-size: 400px;
-        opacity: 0.95;
-    }
-    
-    /* Sidebar (Sol Menü) */
-    [data-testid="stSidebar"] {
-        background-color: #ffffff;
-        border-right: 1px solid #d1d7db;
-    }
-    
-    /* Giriş Ekranı Container */
-    .login-container {
-        background: white;
-        padding: 40px;
-        border-radius: 10px;
-        box-shadow: 0 4px 20px rgba(0,0,0,0.1);
-        max-width: 500px;
-        margin: 50px auto;
-        text-align: center;
-        border-top: 5px solid #00a884;
-    }
-
-    /* Mesaj Balonları Alanı */
-    .chat-container {
-        height: 50vh;
-        overflow-y: auto;
-        padding: 20px;
-        background: rgba(239, 234, 226, 0.3);
-        border-radius: 10px;
-        margin-bottom: 20px;
-    }
-    
-    .message-sent {
-        display: flex;
-        justify-content: flex-end;
-        margin: 8px 0;
-    }
-    
-    .message-received {
-        display: flex;
-        justify-content: flex-start;
-        margin: 8px 0;
-    }
-    
-    .message-bubble-sent {
-        background-color: #d9fdd3;
-        color: #111b21;
-        padding: 8px 12px;
-        border-radius: 8px 0 8px 8px;
-        max-width: 65%;
-        box-shadow: 0 1px 0.5px rgba(11,20,26,.13);
-        font-size: 14.5px;
-    }
-    
-    .message-bubble-received {
-        background-color: #ffffff;
-        color: #111b21;
-        padding: 8px 12px;
-        border-radius: 0 8px 8px 8px;
-        max-width: 65%;
-        box-shadow: 0 1px 0.5px rgba(11,20,26,.13);
-        font-size: 14.5px;
-    }
-    
-    /* Simüle Arama Ekranı Tasarımı */
-    .call-screen {
-        text-align: center;
-        background: linear-gradient(135deg, #075E54 0%, #128C7E 100%);
-        color: white;
-        padding: 80px;
-        border-radius: 20px;
-        box-shadow: 0 10px 30px rgba(0,0,0,0.3);
-        margin-top: 30px;
-    }
+    .stApp { background-color: #efeae2; background-image: url("https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png"); }
+    [data-testid="stSidebar"] { background-color: #ffffff; border-right: 1px solid #d1d7db; }
+    .login-container { background: white; padding: 40px; border-radius: 10px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); max-width: 500px; margin: 50px auto; border-top: 5px solid #00a884; }
+    .chat-container { height: 50vh; overflow-y: auto; padding: 20px; background: rgba(239, 234, 226, 0.3); border-radius: 10px; }
+    .message-sent { display: flex; justify-content: flex-end; margin: 8px 0; }
+    .message-received { display: flex; justify-content: flex-start; margin: 8px 0; }
+    .message-bubble-sent { background-color: #d9fdd3; padding: 8px 12px; border-radius: 8px 0 8px 8px; max-width: 65%; font-size: 14px; }
+    .message-bubble-received { background-color: #ffffff; padding: 8px 12px; border-radius: 0 8px 8px 8px; max-width: 65%; font-size: 14px; }
+    .call-screen { text-align: center; background: linear-gradient(135deg, #075E54 0%, #128C7E 100%); color: white; padding: 80px; border-radius: 20px; }
 </style>
 """, unsafe_allow_html=True)
 
-# --- VERİTABANI İŞLEMLERİ (KALICILIK) ---
+# --- VALIDASYON FONKSİYONU ---
+def is_valid_phone(phone):
+    """Telefon numarası 0 ile başlamalı, sadece rakam olmalı ve 11 haneli olmalı."""
+    if phone.isdigit() and len(phone) == 11 and phone.startswith('0'):
+        return True
+    return False
+
+# --- VERİTABANI İŞLEMLERİ ---
 DATA_FILE = "ostchat_pro_data.json"
 
 def load_data():
@@ -133,14 +70,13 @@ if "active_call" not in st.session_state: st.session_state.active_call = None
 # --- GİRİŞ EKRANI ---
 if not st.session_state.logged_in:
     st.markdown("<div class='login-container'>", unsafe_allow_html=True)
-    st.title("💬 östchat PRO")
-    st.write("Sisteme giriş yapmak için bilgilerinizi girin.")
+    st.title("💬 Giriş Yap")
     
-    phone_input = st.text_input("Telefon Numaranız:")
+    phone_input = st.text_input("Telefon Numarası (Örn: 05XXXXXXXXX):")
     name_input = st.text_input("Adınız ve Soyadınız:")
     
     if st.button("Giriş Yap", type="primary"):
-        if phone_input and name_input:
+        if is_valid_phone(phone_input):
             data = load_data()
             data["users"][phone_input] = {"name": name_input}
             save_data(data)
@@ -148,13 +84,14 @@ if not st.session_state.logged_in:
             st.session_state.my_name = name_input
             st.session_state.logged_in = True
             st.rerun()
+        else:
+            st.error("Hata: Numara 0 ile başlamalı ve 11 haneli olmalıdır!")
     st.markdown("</div>", unsafe_allow_html=True)
 
 else:
     # --- ANA EKRAN ---
     data = load_data()
     
-    # Sidebar (Menü)
     with st.sidebar:
         st.markdown(f"### 👤 {st.session_state.my_name}")
         if st.button("🚪 Çıkış Yap"):
@@ -162,7 +99,7 @@ else:
             st.session_state.selected_contact = None
             st.rerun()
             
-        tab1, tab2 = st.tabs(["💬 Sohbetler", "➕ Rehber/Grup"])
+        tab1, tab2 = st.tabs(["💬 Sohbetler", "➕ Rehber Yönetimi"])
         
         with tab1:
             st.write("#### Kişiler")
@@ -182,19 +119,21 @@ else:
         
         with tab2:
             st.write("#### Yeni Kişi Ekle")
-            new_phone = st.text_input("Numara:", key="np")
+            new_phone = st.text_input("Numara (05...):", key="np")
             new_name = st.text_input("İsim:", key="nn")
-            if st.button("Kaydet"):
-                if new_phone and new_name:
+            if st.button("Kişiyi Kaydet"):
+                if is_valid_phone(new_phone):
                     data["users"][new_phone] = {"name": new_name}
                     save_data(data)
-                    st.success("Kişi eklendi!")
+                    st.success("Kişi başarıyla eklendi!")
                     st.rerun()
+                else:
+                    st.error("Geçersiz Numara formatı!")
             
             st.markdown("---")
             st.write("#### Grup Kur")
             g_name = st.text_input("Grup Adı:", key="gn")
-            if st.button("Grubu Oluştur"):
+            if st.button("Oluştur"):
                 if g_name and g_name not in data["groups"]:
                     data["groups"][g_name] = {"members": [st.session_state.my_phone]}
                     save_data(data)
@@ -204,7 +143,6 @@ else:
     if st.session_state.selected_contact:
         target = st.session_state.selected_contact
         
-        # Arama Modu
         if st.session_state.active_call:
             st.markdown(f"<div class='call-screen'><h1>📞 {target} aranıyor...</h1></div>", unsafe_allow_html=True)
             if WEBRTC_AVAILABLE:
@@ -213,7 +151,6 @@ else:
                 st.session_state.active_call = False
                 st.rerun()
         else:
-            # Sohbet Ekranı
             header_col1, header_col2 = st.columns([4, 1])
             with header_col1:
                 st.header(target)
@@ -222,7 +159,6 @@ else:
                     st.session_state.active_call = True
                     st.rerun()
             
-            # Mesajlar
             conv_key = f"CHAT_{target}" if st.session_state.is_group_chat else f"CHAT_{''.join(sorted([st.session_state.my_phone, target]))}"
             if conv_key not in data["conversations"]: data["conversations"][conv_key] = []
             
@@ -234,12 +170,11 @@ else:
                     st.markdown(f"<div class='message-received'><div class='message-bubble-received'>{msg['text']}</div></div>", unsafe_allow_html=True)
             st.markdown("</div>", unsafe_allow_html=True)
             
-            # Input
-            msg_input = st.text_input("Bir mesaj yazın...", key="input")
+            msg_input = st.text_input("Mesajınız:", key="input")
             if st.button("Gönder"):
                 if msg_input:
                     data["conversations"][conv_key].append({"sender": st.session_state.my_phone, "text": msg_input})
                     save_data(data)
                     st.rerun()
     else:
-        st.write("Sol menüden bir kişi veya grup seçin ve sohbete başlayın.")
+        st.write("Sohbet etmek için bir kişi veya grup seçin.")
