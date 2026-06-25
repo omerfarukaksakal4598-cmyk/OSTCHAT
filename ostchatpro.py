@@ -2,7 +2,13 @@ import streamlit as st
 from datetime import datetime
 import json
 import os
-from pathlib import Path
+
+# Kamera ve Mikrofon için WebRTC Kütüphanesi
+try:
+    from streamlit_webrtc import webrtc_streamer
+    WEBRTC_AVAILABLE = True
+except ImportError:
+    WEBRTC_AVAILABLE = False
 
 # Sayfa Konfigürasyonu
 st.set_page_config(
@@ -12,364 +18,338 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS (Advanced)
+# Custom CSS (WhatsApp Tasarımı)
 st.markdown("""
 <style>
-    /* Genel Stil */
-    [data-testid="stAppViewContainer"] {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    }
-    
     .stApp {
-        background: #f5f5f5;
+        background-color: #efeae2;
+        background-image: url("https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png");
+        background-repeat: repeat;
+        background-size: 400px;
+        opacity: 0.95;
     }
-    
-    /* Sidebar */
     [data-testid="stSidebar"] {
-        background: linear-gradient(180deg, #667eea 0%, #764ba2 100%);
+        background-color: #ffffff;
+        border-right: 1px solid #d1d7db;
     }
-    
-    [data-testid="stSidebar"] * {
-        color: white !important;
-    }
-    
-    /* Chat Container */
-    .chat-container {
-        height: 550px;
-        overflow-y: auto;
+    .login-container {
         background: white;
-        border-radius: 15px;
-        padding: 20px;
-        margin: 10px 0;
-        border: 2px solid #e0e0e0;
+        padding: 40px;
+        border-radius: 10px;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+        max-width: 500px;
+        margin: 50px auto;
+        text-align: center;
+        border-top: 5px solid #00a884;
     }
-    
-    /* Mesaj Stilleri */
+    .chat-container {
+        height: 50vh;
+        overflow-y: auto;
+        padding: 20px;
+        background: rgba(239, 234, 226, 0.3);
+        border-radius: 10px;
+        margin-bottom: 20px;
+    }
     .message-sent {
         display: flex;
         justify-content: flex-end;
-        margin: 12px 0;
-        animation: slideIn 0.3s ease-in;
+        margin: 8px 0;
     }
-    
     .message-received {
         display: flex;
         justify-content: flex-start;
-        margin: 12px 0;
-        animation: slideIn 0.3s ease-in;
+        margin: 8px 0;
     }
-    
-    @keyframes slideIn {
-        from {
-            opacity: 0;
-            transform: translateY(10px);
-        }
-        to {
-            opacity: 1;
-            transform: translateY(0);
-        }
-    }
-    
     .message-bubble-sent {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
-        padding: 12px 16px;
-        border-radius: 18px 18px 4px 18px;
+        background-color: #d9fdd3;
+        color: #111b21;
+        padding: 8px 12px;
+        border-radius: 8px 0 8px 8px;
         max-width: 65%;
-        word-wrap: break-word;
-        box-shadow: 0 2px 8px rgba(102, 126, 234, 0.4);
+        box-shadow: 0 1px 0.5px rgba(11,20,26,.13);
+        font-size: 14.5px;
     }
-    
     .message-bubble-received {
-        background: #e4e6eb;
-        color: #000;
-        padding: 12px 16px;
-        border-radius: 18px 18px 18px 4px;
+        background-color: #ffffff;
+        color: #111b21;
+        padding: 8px 12px;
+        border-radius: 0 8px 8px 8px;
         max-width: 65%;
-        word-wrap: break-word;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        box-shadow: 0 1px 0.5px rgba(11,20,26,.13);
+        font-size: 14.5px;
     }
-    
     .message-meta {
         font-size: 11px;
-        color: #999;
-        margin-top: 6px;
+        color: #667781;
+        margin-top: 4px;
         display: flex;
-        gap: 8px;
+        justify-content: flex-end;
         align-items: center;
+        gap: 4px;
     }
-    
-    /* Status İndikatörü */
-    .status-online {
-        display: inline-block;
-        width: 8px;
-        height: 8px;
-        background: #31a24c;
-        border-radius: 50%;
-        margin-right: 4px;
-    }
-    
-    .status-offline {
-        display: inline-block;
-        width: 8px;
-        height: 8px;
-        background: #ccc;
-        border-radius: 50%;
-        margin-right: 4px;
-    }
-    
-    /* Stats Box */
-    .stats-box {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
-        padding: 15px;
-        border-radius: 10px;
+    .call-screen {
         text-align: center;
-        margin: 10px 0;
+        background: linear-gradient(135deg, #075E54 0%, #128C7E 100%);
+        color: white;
+        padding: 40px;
+        border-radius: 20px;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+        margin-top: 30px;
     }
 </style>
 """, unsafe_allow_html=True)
 
-# Veri Dosyaları
+# Veri Dosyası (Database)
 DATA_FILE = "ostchat_pro_data.json"
-USERS_FILE = "ostchat_users.json"
 
 def load_data():
-    """Mesajları yükle"""
     if os.path.exists(DATA_FILE):
-        with open(DATA_FILE, 'r', encoding='utf-8') as f:
-            return json.load(f)
-    return {"conversations": {}}
+        try:
+            with open(DATA_FILE, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                if "users" not in data: data["users"] = {}
+                if "groups" not in data: data["groups"] = {}
+                if "conversations" not in data: data["conversations"] = {}
+                return data
+        except:
+            pass
+    return {"users": {}, "groups": {}, "conversations": {}}
 
 def save_data(data):
-    """Mesajları kaydet"""
     with open(DATA_FILE, 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
-def load_users():
-    """Kullanıcı bilgilerini yükle"""
-    if os.path.exists(USERS_FILE):
-        with open(USERS_FILE, 'r', encoding='utf-8') as f:
-            return json.load(f)
-    return {}
-
-def save_users(users):
-    """Kullanıcı bilgilerini kaydet"""
-    with open(USERS_FILE, 'w', encoding='utf-8') as f:
-        json.dump(users, f, ensure_ascii=False, indent=2)
-
-def get_conversation_key(user1, user2):
-    """Konuşma anahtarı"""
+def get_conversation_key(user1, user2, is_group=False):
+    if is_group:
+        return f"GROUP_{user1}"
     users = sorted([user1, user2])
-    return f"{users[0]}_{users[1]}"
+    return f"PRIVATE_{users[0]}_{users[1]}"
 
-def add_message(sender, receiver, message, emoji="👤"):
-    """Mesaj ekle"""
+def add_message(sender_phone, sender_name, receiver_id, message, is_group=False):
     data = load_data()
-    conv_key = get_conversation_key(sender, receiver)
+    conv_key = get_conversation_key(receiver_id if is_group else sender_phone, 
+                                    None if is_group else receiver_id, 
+                                    is_group)
     
     if conv_key not in data["conversations"]:
         data["conversations"][conv_key] = []
     
     data["conversations"][conv_key].append({
-        "sender": sender,
-        "receiver": receiver,
+        "sender_phone": sender_phone,
+        "sender_name": sender_name,
         "message": message,
         "timestamp": datetime.now().strftime("%H:%M"),
-        "date": datetime.now().strftime("%d.%m.%Y"),
-        "emoji": emoji,
-        "read": False
+        "date": datetime.now().strftime("%d.%m.%Y")
     })
-    
     save_data(data)
 
-def mark_as_read(sender, receiver):
-    """Mesajları okundu olarak işaretle"""
+def create_group(group_name, members):
     data = load_data()
-    conv_key = get_conversation_key(sender, receiver)
-    
-    if conv_key in data["conversations"]:
-        for msg in data["conversations"][conv_key]:
-            if msg["receiver"] == sender:
-                msg["read"] = True
-    
-    save_data(data)
+    if group_name not in data["groups"]:
+        data["groups"][group_name] = {"members": members, "created_at": datetime.now().strftime("%d.%m.%Y")}
+        save_data(data)
+        return True
+    return False
 
-def get_messages(user1, user2):
-    """Mesajları getir"""
-    data = load_data()
-    conv_key = get_conversation_key(user1, user2)
-    return data["conversations"].get(conv_key, [])
-
-def get_all_users():
-    """Tüm kullanıcıları getir"""
-    data = load_data()
-    users = set()
-    for conv_key in data["conversations"]:
-        user1, user2 = conv_key.split("_")
-        users.add(user1)
-        users.add(user2)
-    return sorted(list(users))
-
-def get_unread_count(current_user):
-    """Okunmamış mesaj sayısı"""
-    data = load_data()
-    count = 0
-    for conv_key in data["conversations"]:
-        for msg in data["conversations"][conv_key]:
-            if msg["receiver"] == current_user and not msg.get("read", False):
-                count += 1
-    return count
-
-# Session State
-if "current_user" not in st.session_state:
-    st.session_state.current_user = None
+# Session State Değişkenleri
+if "logged_in" not in st.session_state:
+    st.session_state.logged_in = False
+if "my_phone" not in st.session_state:
+    st.session_state.my_phone = None
+if "my_name" not in st.session_state:
+    st.session_state.my_name = None
 if "selected_contact" not in st.session_state:
     st.session_state.selected_contact = None
-if "show_stats" not in st.session_state:
-    st.session_state.show_stats = False
+if "is_group_chat" not in st.session_state:
+    st.session_state.is_group_chat = False
+if "active_call" not in st.session_state:
+    st.session_state.active_call = None
 
-# Sidebar
-with st.sidebar:
-    st.markdown("## 💬 **östchat PRO**")
-    st.markdown("*Advanced Chat v1.5*")
-    st.markdown("---")
+# ==========================================
+# 1. GERÇEK KAMERA/ARAMA EKRANI MODU
+# ==========================================
+if st.session_state.logged_in and st.session_state.active_call:
+    call_type = st.session_state.active_call
+    target = st.session_state.selected_contact
+    data = load_data()
     
-    # Kullanıcı Seçimi
-    st.markdown("### 👤 Kullanıcı")
-    
-    all_users = get_all_users() + ["Yeni Kullanıcı"]
-    selected = st.selectbox("Seç:", all_users, key="user_select")
-    
-    if selected == "Yeni Kullanıcı":
-        new_user = st.text_input("Ad:", key="new_user", placeholder="Kullanıcı Adı")
-        if st.button("✅ Oluştur", use_container_width=True):
-            if new_user:
-                st.session_state.current_user = new_user
-                st.success(f"✅ {new_user} oluşturuldu!")
-                st.rerun()
+    if st.session_state.is_group_chat:
+        target_name = f"👥 {target} Grubu"
     else:
-        st.session_state.current_user = selected
-    
-    if st.session_state.current_user:
-        unread = get_unread_count(st.session_state.current_user)
-        col1, col2 = st.columns([2, 1])
-        with col1:
-            st.markdown(f"**{st.session_state.current_user}**")
-        with col2:
-            if unread > 0:
-                st.markdown(f"🔴 **{unread}**")
-        
-        st.markdown("---")
-        
-        # İstatistikler
-        if st.button("📊 İstatistikler", use_container_width=True):
-            st.session_state.show_stats = not st.session_state.show_stats
-        
-        # Kişiler
-        st.markdown("### 📇 Kişiler")
-        all_users_list = [u for u in get_all_users() if u != st.session_state.current_user]
-        
-        if all_users_list:
-            for contact in all_users_list:
-                messages = get_messages(st.session_state.current_user, contact)
-                unread_with_contact = sum(1 for m in messages 
-                                         if m["receiver"] == st.session_state.current_user 
-                                         and not m.get("read", False))
-                
-                col1, col2 = st.columns([4, 1])
-                with col1:
-                    btn_text = f"👤 {contact}"
-                    if unread_with_contact > 0:
-                        btn_text += f" 🔴 {unread_with_contact}"
-                    
-                    if st.button(btn_text, key=f"contact_{contact}", use_container_width=True):
-                        st.session_state.selected_contact = contact
-                        mark_as_read(st.session_state.current_user, contact)
-                
-                with col2:
-                    st.write("💬")
-        
-        st.markdown("---")
-        st.markdown("### ➕ Yeni Sohbet")
-        
-        new_contact = st.text_input("Ad:", key="new_contact", placeholder="Kişi Adı")
-        if st.button("✉️ Başlat", use_container_width=True):
-            if new_contact and new_contact != st.session_state.current_user:
-                st.session_state.selected_contact = new_contact
-                st.success(f"✅ {new_contact} ile sohbet açıldı!")
-                st.rerun()
+        target_name = data["users"].get(target, {}).get("name", target)
 
-# Ana İçerik
-if st.session_state.current_user:
-    # İstatistikler
-    if st.session_state.show_stats:
-        st.markdown("### 📊 İstatistikler")
-        
-        col1, col2, col3 = st.columns(3)
-        
-        data = load_data()
-        total_convs = len(data["conversations"])
-        total_msgs = sum(len(msgs) for msgs in data["conversations"].values())
-        total_users = len(get_all_users())
-        
-        with col1:
-            st.markdown(f"""
-            <div class="stats-box">
-                <h3>👥</h3>
-                <h2>{total_users}</h2>
-                <p>Toplam Kullanıcı</p>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        with col2:
-            st.markdown(f"""
-            <div class="stats-box">
-                <h3>💬</h3>
-                <h2>{total_convs}</h2>
-                <p>Konuşma</p>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        with col3:
-            st.markdown(f"""
-            <div class="stats-box">
-                <h3>📝</h3>
-                <h2>{total_msgs}</h2>
-                <p>Mesaj</p>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        st.markdown("---")
+    st.markdown(f"""
+    <div class="call-screen">
+        <h2 style='font-size: 36px; font-weight: bold;'>{target_name}</h2>
+        <p style='font-size: 18px; color: #d1d7db; letter-spacing: 1px;'>
+            {"SESLİ ARAMA (MİKROFON AÇIK)" if call_type == 'voice' else "GÖRÜNTÜLÜ ARAMA (KAMERA AÇIK)"}
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
     
-    # Sohbet Alanı
-    if st.session_state.selected_contact:
-        st.markdown(f"""
-        <div style='background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
-                    padding: 15px 20px; border-radius: 10px; margin-bottom: 15px;'>
-            <h2 style='color: white; margin: 0;'>
-                💬 {st.session_state.current_user} 
-                <span style='color: #ccc;'>→</span> 
-                {st.session_state.selected_contact}
-            </h2>
+    # GERÇEK WEBRTC KAMERA/MİKROFON BAĞLANTISI
+    st.markdown("<div style='text-align: center; margin-top: 20px;'>", unsafe_allow_html=True)
+    if WEBRTC_AVAILABLE:
+        if call_type == 'video':
+            st.info("Kameranız açılıyor... (Tarayıcı izinlerini kabul edin)")
+            webrtc_streamer(key="video_call")
+        elif call_type == 'voice':
+            st.info("Mikrofonunuz açılıyor... (Tarayıcı izinlerini kabul edin)")
+            # Sadece ses için webrtc ayarları
+            webrtc_streamer(key="voice_call", media_stream_constraints={"video": False, "audio": True})
+    else:
+        st.error("Gerçek arama yapabilmek için 'streamlit-webrtc' kütüphanesi eksik! Lütfen requirements.txt dosyasına ekleyin.")
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    st.markdown("<br>", unsafe_allow_html=True)
+    if st.button("🔴 Aramayı Sonlandır", use_container_width=True, type="primary"):
+        st.session_state.active_call = None
+        st.rerun()
+    st.stop()
+
+# ==========================================
+# 2. GİRİŞ EKRANI
+# ==========================================
+if not st.session_state.logged_in:
+    st.markdown("<div style='height: 30px;'></div>", unsafe_allow_html=True)
+    col1, col2, col3 = st.columns([1, 2, 1])
+    
+    with col2:
+        st.markdown("""
+        <div class="login-container">
+            <h1 style='color: #00a884; font-size: 60px; margin: 0;'>💬</h1>
+            <h2 style='color: #111b21; font-weight: bold;'>östchat PRO v3.0</h2>
+            <p style='color: #667781; margin-bottom: 25px;'>Gerçek Arama Özellikli Sürüm</p>
         </div>
         """, unsafe_allow_html=True)
         
-        messages = get_messages(st.session_state.current_user, st.session_state.selected_contact)
+        phone_input = st.text_input("📱 Telefon Numaranız", placeholder="Örn: 05551234567")
+        name_input = st.text_input("👤 Adınız ve Soyadınız", placeholder="Örn: Ömer Faruk")
+        
+        if st.button("🚀 Giriş Yap / Kayıt Ol", use_container_width=True, type="primary"):
+            if phone_input.strip() and name_input.strip():
+                data = load_data()
+                data["users"][phone_input] = {"name": name_input, "last_login": datetime.now().strftime("%d.%m.%Y %H:%M")}
+                save_data(data)
+                
+                st.session_state.my_phone = phone_input
+                st.session_state.my_name = name_input
+                st.session_state.logged_in = True
+                st.rerun()
+            else:
+                st.error("Lütfen tüm alanları eksiksiz doldurun!")
+
+# ==========================================
+# 3. ANA SOHBET MASASI
+# ==========================================
+else:
+    data = load_data()
+    all_users = data["users"]
+    all_groups = data["groups"]
+    
+    with st.sidebar:
+        st.markdown(f"""
+        <div style='background-color: #00a884; padding: 15px; border-radius: 8px; color: white; margin-bottom: 15px;'>
+            <h3 style='margin: 0; color: white;'>👤 {st.session_state.my_name}</h3>
+            <p style='margin: 0; color: #e1f5fe; font-size: 12px;'>Numara: {st.session_state.my_phone}</p>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        if st.button("🚪 Oturumu Kapat", use_container_width=True):
+            st.session_state.logged_in = False
+            st.session_state.selected_contact = None
+            st.rerun()
+            
+        st.markdown("---")
+        
+        tab1, tab2 = st.tabs(["📇 Kişiler", "👥 Gruplar"])
+        
+        with tab1:
+            other_users = {p: u for p, u in all_users.items() if p != st.session_state.my_phone}
+            if not other_users:
+                st.info("Sistemde başka kayıtlı kullanıcı yok.")
+            else:
+                for phone, info in other_users.items():
+                    if st.button(f"👤 {info['name']}", key=f"user_{phone}", use_container_width=True):
+                        st.session_state.selected_contact = phone
+                        st.session_state.is_group_chat = False
+                        st.rerun()
+        
+        with tab2:
+            my_groups = [g for g, details in all_groups.items() if st.session_state.my_phone in details["members"]]
+            if not my_groups:
+                st.info("Henüz dahil olduğunuz bir grup yok.")
+            else:
+                for grp in my_groups:
+                    if st.button(f"👥 {grp}", key=f"grp_{grp}", use_container_width=True):
+                        st.session_state.selected_contact = grp
+                        st.session_state.is_group_chat = True
+                        st.rerun()
+                        
+            st.markdown("---")
+            st.markdown("##### ➕ Yeni Grup Oluştur")
+            new_group_name = st.text_input("Grup İsmi:", key="group_name_input")
+            
+            available_members = list(other_users.keys())
+            selected_members = st.multiselect("Üyeleri Seçin:", available_members, format_func=lambda x: all_users[x]["name"])
+            
+            if st.button("👥 Grubu Kur", use_container_width=True):
+                if new_group_name.strip() and selected_members:
+                    final_members = selected_members + [st.session_state.my_phone]
+                    if create_group(new_group_name.strip(), final_members):
+                        st.success(f"'{new_group_name}' grubu başarıyla kuruldu!")
+                        st.rerun()
+                    else:
+                        st.error("Bu grup ismi zaten kullanılıyor.")
+                else:
+                    st.warning("Lütfen grup adı girin ve üye seçin.")
+
+    if st.session_state.selected_contact:
+        is_group = st.session_state.is_group_chat
+        target_id = st.session_state.selected_contact
+        
+        if is_group:
+            chat_title = f"👥 {target_id}"
+            chat_subtitle = f"{len(all_groups[target_id]['members'])} Katılımcı"
+            conv_key = get_conversation_key(target_id, None, is_group=True)
+        else:
+            chat_title = f"👤 {all_users[target_id]['name']}"
+            chat_subtitle = f"Çevrimiçi | Numarası: {target_id}"
+            conv_key = get_conversation_key(st.session_state.my_phone, target_id, is_group=False)
+
+        header_col1, header_col2, header_col3 = st.columns([6, 1, 1])
+        with header_col1:
+            st.markdown(f"""
+            <div style='background-color: #ffffff; padding: 12px 20px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); border-left: 5px solid #00a884;'>
+                <h3 style='margin: 0; color: #111b21;'>{chat_title}</h3>
+                <span style='color: #667781; font-size: 13px;'>{chat_subtitle}</span>
+            </div>
+            """, unsafe_allow_html=True)
+            
+        with header_col2:
+            if st.button("📞 Sesli", use_container_width=True):
+                st.session_state.active_call = 'voice'
+                st.rerun()
+                
+        with header_col3:
+            if st.button("🎥 Video", use_container_width=True):
+                st.session_state.active_call = 'video'
+                st.rerun()
+        
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        messages = data["conversations"].get(conv_key, [])
         
         st.markdown('<div class="chat-container">', unsafe_allow_html=True)
-        
         if messages:
             for msg in messages:
-                if msg["sender"] == st.session_state.current_user:
+                if msg["sender_phone"] == st.session_state.my_phone:
                     st.markdown(f"""
                     <div class='message-sent'>
                         <div class='message-bubble-sent'>
-                            <div>{msg['message']}</div>
-                            <div class='message-meta'>
-                                <span>{msg['timestamp']}</span>
-                                <span>{'✓✓' if msg.get('read') else '✓'}</span>
-                            </div>
+                            <div style='font-weight:bold; font-size:12px; color:#00a884;'>Sen</div>
+                            <div style='margin-top:2px;'>{msg['message']}</div>
+                            <div class='message-meta'><span>{msg['timestamp']}</span> <span style='color:#53bdeb;'>✓✓</span></div>
                         </div>
                     </div>
                     """, unsafe_allow_html=True)
@@ -377,82 +357,53 @@ if st.session_state.current_user:
                     st.markdown(f"""
                     <div class='message-received'>
                         <div class='message-bubble-received'>
-                            <strong>{msg['sender']}</strong>
-                            <div style='margin-top: 5px;'>{msg['message']}</div>
-                            <div class='message-meta'>
-                                <span>{msg['timestamp']}</span>
-                            </div>
+                            <div style='font-weight:bold; font-size:12px; color:#e67e22;'>{msg['sender_name']}</div>
+                            <div style='margin-top:2px;'>{msg['message']}</div>
+                            <div class='message-meta'><span>{msg['timestamp']}</span></div>
                         </div>
                     </div>
                     """, unsafe_allow_html=True)
         else:
-            st.info("📭 Sohbeti başlat!")
-        
+            st.markdown("<p style='text-align:center; color:#667781; padding-top:20px;'>İlk mesajı siz yazın!</p>", unsafe_allow_html=True)
         st.markdown('</div>', unsafe_allow_html=True)
         
-        # Mesaj Gönder
-        st.markdown("---")
-        
-        col1, col2, col3, col4 = st.columns([4, 0.8, 0.8, 0.8])
+        col1, col2, col3, col4, col5, col6 = st.columns([5, 0.6, 0.6, 0.6, 0.6, 1.2])
         
         with col1:
-            message = st.text_input("Mesaj:", placeholder="Yaz...", key="msg_input")
+            message_text = st.text_input("Mesajınızı yazın...", placeholder="Bir mesaj yazın...", key="msg_input", label_visibility="collapsed")
         
         with col2:
-            if st.button("😊", help="Güldür"):
-                if message:
-                    add_message(st.session_state.current_user, 
-                               st.session_state.selected_contact, 
-                               message + " 😊", "😊")
-                    st.success("✅")
-                    st.rerun()
-        
-        with col3:
-            if st.button("👍", help="Beğen"):
-                add_message(st.session_state.current_user, 
-                           st.session_state.selected_contact, 
-                           "👍", "👍")
+            if st.button("😊", use_container_width=True):
+                add_message(st.session_state.my_phone, st.session_state.my_name, target_id, message_text + " 😊" if message_text else "😊", is_group)
                 st.rerun()
-        
+        with col3:
+            if st.button("😂", use_container_width=True):
+                add_message(st.session_state.my_phone, st.session_state.my_name, target_id, message_text + " 😂" if message_text else "😂", is_group)
+                st.rerun()
         with col4:
-            if st.button("📤 Gönder"):
-                if message.strip():
-                    add_message(st.session_state.current_user, 
-                               st.session_state.selected_contact, 
-                               message)
-                    st.success("✅")
+            if st.button("❤️", use_container_width=True):
+                add_message(st.session_state.my_phone, st.session_state.my_name, target_id, message_text + " ❤️" if message_text else "❤️", is_group)
+                st.rerun()
+        with col5:
+            if st.button("👍", use_container_width=True):
+                add_message(st.session_state.my_phone, st.session_state.my_name, target_id, message_text + " 👍" if message_text else "👍", is_group)
+                st.rerun()
+                
+        with col6:
+            if st.button("🚀 Gönder", use_container_width=True, type="primary"):
+                if message_text.strip():
+                    add_message(st.session_state.my_phone, st.session_state.my_name, target_id, message_text.strip(), is_group)
                     st.rerun()
                 else:
-                    st.warning("Mesaj yazın!")
-    
+                    st.warning("Boş mesaj gönderilemez!")
     else:
         st.markdown("""
-        <div style='text-align: center; padding: 120px 20px;'>
-            <h1 style='color: #667eea; font-size: 70px;'>💬</h1>
-            <h2 style='font-size: 32px; color: #333;'>Sohbet Seç</h2>
-            <p style='color: #666; font-size: 16px;'>
-                Sol menüden kişi seç ya da yeni sohbet başlat
-            </p>
+        <div style='text-align: center; padding: 100px 20px; background: white; border-radius: 15px; margin-top: 30px;'>
+            <h1 style='color: #00a884; font-size: 70px; margin-bottom: 10px;'>👋</h1>
+            <h2 style='color: #111b21;'>Sohbete Başlayın</h2>
+            <p style='color: #667781; font-size: 16px;'>Sol menüden bir kişi seçin, grup kurun veya mesajlaşın.</p>
         </div>
         """, unsafe_allow_html=True)
 
-else:
-    st.markdown("""
-    <div style='text-align: center; padding: 150px 20px;'>
-        <h1 style='color: #667eea; font-size: 90px; margin: 0;'>💬</h1>
-        <h1 style='font-size: 48px; color: #333;'>östchat</h1>
-        <p style='color: #666; font-size: 18px; margin-top: 20px;'>
-            Modern Sohbet Platformu
-        </p>
-        <hr>
-        <p style='color: #999;'>Giriş yapmak için sol menüyü kullan</p>
-    </div>
-    """, unsafe_allow_html=True)
-
-# Footer
 st.markdown("---")
-st.markdown(
-    "<p style='text-align: center; color: #999; font-size: 11px;'>"
-    "östchat PRO v1.5 | Streamlit Powered | Made with ❤️</p>",
-    unsafe_allow_html=True
-)
+st.markdown("<p style='text-align: center; color: #667781; font-size: 12px; font-weight: bold;'>⚡ östchat PRO v3.0 | WebRTC Altyapısı Eklendi</p>", unsafe_allow_html=True)
